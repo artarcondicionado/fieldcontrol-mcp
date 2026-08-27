@@ -330,6 +330,14 @@ function buildServer(apiKey) {
 
 const app = express();
 app.use(express.json());
+app.use((req, res, next) => {
+  console.log(
+    `[req] ${new Date().toISOString()} ${req.method} ${req.path} session=${req.header(
+      "mcp-session-id"
+    )}`
+  );
+  next();
+});
 
 const transports = {};
 
