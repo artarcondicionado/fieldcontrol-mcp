@@ -6,16 +6,9 @@ import { z } from "zod";
 import { FieldControlClient } from "./fieldControlClient.js";
 
 const PORT = process.env.PORT || 3000;
-// A chave de API do Field Control é lida do ambiente por padrão (mesma
-// chave para todos que usarem este servidor). Se preferir permitir uma
-// chave por usuário, veja o comentário em getApiKeyFromRequest() abaixo.
 const DEFAULT_API_KEY = process.env.FIELD_CONTROL_API_KEY;
 
 function getApiKeyFromRequest(req) {
-  // Opção simples: todos usam a mesma chave (definida na variável de ambiente
-  // do servidor). Se quiser permitir que cada usuário use sua própria chave,
-  // troque para ler de um header, ex:
-  //   return req.header("X-FieldControl-Api-Key") || DEFAULT_API_KEY;
   return DEFAULT_API_KEY;
 }
 
@@ -39,7 +32,6 @@ function buildServer(apiKey) {
     isError: true,
   });
 
-  // ---------- Clientes ----------
   server.tool(
     "listar_clientes",
     "Lista clientes cadastrados no Field Control, com filtro opcional por nome/CPF-CNPJ.",
@@ -102,7 +94,6 @@ function buildServer(apiKey) {
     }
   );
 
-  // ---------- Colaboradores ----------
   server.tool(
     "listar_colaboradores",
     "Lista os colaboradores (técnicos de campo) cadastrados no Field Control.",
@@ -134,7 +125,6 @@ function buildServer(apiKey) {
     }
   );
 
-  // ---------- Serviços (tipos de atividade) ----------
   server.tool(
     "listar_servicos",
     "Lista os tipos de serviço/atividade (ex: instalação, manutenção) cadastrados.",
@@ -153,7 +143,6 @@ function buildServer(apiKey) {
     }
   );
 
-  // ---------- Solicitações de serviço (tickets) ----------
   server.tool(
     "listar_solicitacoes",
     "Lista solicitações de serviço (tickets/chamados) recebidas.",
@@ -198,7 +187,6 @@ function buildServer(apiKey) {
     }
   );
 
-  // ---------- Ordens de serviço ----------
   server.tool(
     "listar_ordens_de_servico",
     "Lista ordens de serviço (OS), com filtro opcional por identificador.",
@@ -282,7 +270,6 @@ function buildServer(apiKey) {
     }
   );
 
-  // ---------- Atividades avulsas ----------
   server.tool(
     "listar_atividades",
     "Lista atividades (visitas) por data de criação.",
@@ -300,7 +287,6 @@ function buildServer(apiKey) {
     }
   );
 
-  // ---------- Equipamentos ----------
   server.tool(
     "listar_equipamentos",
     "Lista equipamentos cadastrados, com filtro opcional por número de série ou cliente.",
@@ -319,7 +305,6 @@ function buildServer(apiKey) {
     }
   );
 
-  // ---------- Fallback genérico ----------
   server.tool(
     "chamada_generica",
     "Faz uma chamada genérica a qualquer endpoint documentado da API do Field Control " +
@@ -346,19 +331,30 @@ function buildServer(apiKey) {
 const app = express();
 app.use(express.json());
 
-// Streamable HTTP transport - sessão nova a cada conexão (stateless simples)
-app.post("/mcp", async (req, res) => {
+const transports = {};
+
+async function handleMcpRequest(req, res) {
   try {
-    const apiKey = getApiKeyFromRequest(req);
-    const server = buildServer(apiKey);
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-    });
-    res.on("close", () => {
-      transport.close();
-      server.close();
-    });
-    await server.connect(transport);
+    const sessionId = req.header("mcp-session-id");
+    let transport = sessionId && transports[sessionId];
+
+    if (!transport) {
+      const apiKey = getApiKeyFromRequest(req);
+      const server = buildServer(apiKey);
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (newSessionId) => {
+          transports[newSessionId] = transport;
+        },
+      });
+      transport.onclose = () => {
+        if (transport.sessionId) {
+          delete transports[transport.sessionId];
+        }
+      };
+      await server.connect(transport);
+    }
+
     await transport.handleRequest(req, res, req.body);
   } catch (err) {
     console.error("Erro no /mcp:", err);
@@ -366,7 +362,11 @@ app.post("/mcp", async (req, res) => {
       res.status(500).json({ error: "internal_error", message: err.message });
     }
   }
-});
+}
+
+app.post("/mcp", handleMcpRequest);
+app.get("/mcp", handleMcpRequest);
+app.delete("/mcp", handleMcpRequest);
 
 app.get("/", (_req, res) => {
   res.send("Field Control MCP server está no ar. Endpoint MCP: POST /mcp");
