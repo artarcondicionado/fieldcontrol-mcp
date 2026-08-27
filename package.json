@@ -1,0 +1,21 @@
+{
+  "name": "fieldcontrol-mcp",
+  "version": "1.0.0",
+  "description": "Servidor MCP remoto que conecta o Claude à API do Field Control",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["mcp", "fieldcontrol", "claude"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "express": "^5.2.1",
+    "zod": "^4.4.3"
+  }
+}
